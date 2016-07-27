@@ -4,6 +4,7 @@
 #include <map>
 #include <vector>
 #include "HcalPulseShape.h"
+#include "TMath.h"
 
 
 /** \class HcalPulseShapes
@@ -32,6 +33,7 @@ public:
   //const Shape& defaultShape(const HcalDetId & detId) const;
   void computeHPDShape(float, float, float, float, float ,
                        float, float, float, Shape&);
+  void computeLAGShape(double, double, double, double, Shape&);  //miao's
   Shape hpdShape_, hfShape_, siPMShape_;
 
 private:
@@ -42,6 +44,7 @@ private:
   Shape hpdShape_v2, hpdShapeMC_v2;
   Shape hpdShape_v3, hpdShapeMC_v3;
   Shape hpdBV30Shape_v2, hpdBV30ShapeMC_v2;
+  Shape datahblagShape, datahelagShape, mchblagShape, mchelagShape;  //miao's
 //   HcalMCParams * theMCParams;
 //   const HcalTopology * theTopology;
 //   HcalRecoParams * theRecoParams;

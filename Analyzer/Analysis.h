@@ -67,6 +67,7 @@ class Analysis : public analysistree
   TTree *tout;
 
   std::auto_ptr<PulseShapeFitOOTPileupCorrection> psFitOOTpuCorr_= std::auto_ptr<PulseShapeFitOOTPileupCorrection>(new PulseShapeFitOOTPileupCorrection());
+  std::auto_ptr<PulseShapeFitOOTPileupCorrection> psFitOOTpuCorrLAG_= std::auto_ptr<PulseShapeFitOOTPileupCorrection>(new PulseShapeFitOOTPileupCorrection());
   HcalPulseShapes theHcalPulseShapes_;
 
 

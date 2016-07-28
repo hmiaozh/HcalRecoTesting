@@ -9,6 +9,8 @@ double pulse_1_temp[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};// TEST
 double pulse_2_temp[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};// TEST
 double pulse_3_temp[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};// TEST
 
+
+
 float timevalfit2_hold =0;// TEST
 float timevalfit3_hold = 0;// TEST
 float chargevalfit3_hold = 0;// TEST
@@ -23,13 +25,26 @@ namespace FitterFuncs{
   PulseShapeFunctor::PulseShapeFunctor(const HcalPulseShapes::Shape& pulse,
 				       bool iPedestalConstraint, bool iTimeConstraint,bool iAddPulseJitter,bool iAddTimeSlew,
 				       double iPulseJitter,double iTimeMean,double iTimeSig,double iPedMean,double iPedSig,
-				       double iNoise) : 
+				       double iNoise, int iTemptype) : 
     cntNANinfit(0),
+    acc1nsVec(HcalConst::maxLAGshapeBin), //miao's
     acc25nsVec(HcalConst::maxPSshapeBin), diff25nsItvlVec(HcalConst::maxPSshapeBin),
     accVarLenIdxZEROVec(HcalConst::nsPerBX), diffVarItvlIdxZEROVec(HcalConst::nsPerBX), 
     accVarLenIdxMinusOneVec(HcalConst::nsPerBX), diffVarItvlIdxMinusOneVec(HcalConst::nsPerBX) {
-    //The raw pulse
+    //The raw pulse 
+       temptype_           = iTemptype;  // set template type 0: 8-para; 1: LAG
+   if(temptype_== 0){  //miao's
     for(int i=0;i<HcalConst::maxPSshapeBin;++i) pulse_hist[i] = pulse(i);
+   }else if(temptype_ == 1){ //begin miao's
+    for(int i=0;i<HcalConst::maxLAGshapeBin;++i) pulse_hist_LAG[i] = pulse(i);
+    //Set pulse shape LAG, may add time shift latter
+    for(int i=0; i<HcalConst::maxLAGshapeBin; ++i){
+      for(int j=i; j<i+HcalConst::nsPerBXLAG; ++j){  //sum over HcalConst::nsPerBXLAGns from point i
+        acc1nsVec[i] += ( j < HcalConst::maxLAGshapeBin? pulse_hist_LAG[j] : pulse_hist_LAG[HcalConst::maxLAGshapeBin-1]);
+      }
+    }
+   }//end miao's 
+   if(temptype_ == 0){  //miao's	
     // Accumulate 25ns for each starting point of 0, 1, 2, 3...
     for(int i=0; i<HcalConst::maxPSshapeBin; ++i){
       for(int j=i; j<i+HcalConst::nsPerBX; ++j){  //sum over HcalConst::nsPerBXns from point i
@@ -49,6 +64,7 @@ namespace FitterFuncs{
       diffVarItvlIdxZEROVec[i] = pulse_hist[i+1] - pulse_hist[0];
       diffVarItvlIdxMinusOneVec[i] = pulse_hist[i] - pulse_hist[0];
     }
+   } // miao's
     for(int i = 0; i < HcalConst::maxSamples; i++) { 
       psFit_x[i]      = 0;
       psFit_y[i]      = 0;
@@ -112,6 +128,21 @@ namespace FitterFuncs{
     return;
   }
 
+  //miao's
+  void PulseShapeFunctor::funcLAGShape(std::array<double,HcalConst::maxSamples> & tenbin, const double &pTime, const double &pHeight) {
+    
+    for (int i = 0; i < HcalConst::maxSamples; i++){
+      int bin_start = (int)pTime;    
+      tenbin[i] = acc1nsVec[i+bin_start];
+      tenbin[i] *= pHeight;
+    }
+    return;
+  }
+
+  //end miao's
+
+
+
   PulseShapeFunctor::~PulseShapeFunctor() {
   }
 
@@ -129,14 +160,15 @@ namespace FitterFuncs{
          int time = (pars[i*2]+timeShift_-timeMean_)*HcalConst::invertnsPerBx;
          //Interpolate the fit (Quickly)
          std::array<double,HcalConst::maxSamples> pulse_shape;
+       if(temptype_ == 0){  //miao's
          funcHPDShape(pulse_shape, pars[i*2],pars[i*2+1],psFit_slew[time]);
+       }else if (temptype_ == 1){   funcLAGShape(pulse_shape, pars[i*2],pars[i*2+1]); } //miao's
          // Fill the temporary holders for the print statements
          for(unsigned k = 0; k < nbins; k++) {
            if (i == 0) pulse_1_temp[k] = pulse_shape[k];
            if (i == 1) pulse_2_temp[k] = pulse_shape[k];
            if (i == 2) pulse_3_temp[k] = pulse_shape[k];
          }
-         
          // add an uncertainty from the pulse (currently noise * pulse height =>Ecal uses full cov)
          if(addPulseJitter_) {
             for (j=0; j<nbins; ++j) {
@@ -154,6 +186,7 @@ namespace FitterFuncs{
         delta2 = (psFit_y[i]- pulse_shape_sum[i])*(psFit_y[i]- pulse_shape_sum[i])/psFit_erry2[i];
         chisq += delta2;
       }
+
 //       for (i=4;i<6; ++i) {
 //         //digi_temp[i] = psFit_y[i];//TEST
 //         delta2 = (psFit_y[i]- pulse_shape_sum[i])*(psFit_y[i]- pulse_shape_sum[i])/psFit_erry2[i];
@@ -201,7 +234,7 @@ PulseShapeFitOOTPileupCorrection::PulseShapeFitOOTPileupCorrection() : cntsetPul
 								       TSMin_(0), TSMax_(0), ts4Chi2_(0), ts3Chi2_(0), ts345Chi2_(0), pedestalConstraint_(0),
 								       timeConstraint_(0), addPulseJitter_(0), unConstrainedFit_(0), applyTimeSlew_(0),
 								       ts4Min_(0), ts4Max_(0), pulseJitter_(0), timeMean_(0), timeSig_(0), pedMean_(0), pedSig_(0),
-								       noise_(0) {
+								       noise_(0), temptype_(0) {
    hybridfitter = new PSFitter::HybridMinimizer(PSFitter::HybridMinimizer::kMigrad);
    iniTimesArr = { {-100,-75,-50,-25,0,25,50,75,100,125} };
 }
@@ -218,7 +251,7 @@ void PulseShapeFitOOTPileupCorrection::setPUParams(bool   iPedestalConstraint, b
 						   double iPulseJitter,double iTimeMean,double iTimeSig,double iPedMean,double iPedSig,
 						   double iNoise,double iTMin,double iTMax,
 						   double its3Chi2,double its4Chi2,double its345Chi2,
-						   double iChargeThreshold,HcalTimeSlew::BiasSetting slewFlavor, int iFitTimes) { 
+						   double iChargeThreshold,HcalTimeSlew::BiasSetting slewFlavor, int iFitTimes, int iTemptype) { 
 
   TSMin_ = iTMin;
   TSMax_ = iTMax;
@@ -241,6 +274,7 @@ void PulseShapeFitOOTPileupCorrection::setPUParams(bool   iPedestalConstraint, b
   slewFlavor_         = slewFlavor;
   chargeThreshold_    = iChargeThreshold;
   fitTimes_           = iFitTimes;
+  temptype_           = iTemptype;
   if(unConstrainedFit_) { //Turn off all Constraints
     //pedestalConstraint_ = false; => Leaving this as tunable
     //timeConstraint_     = false;
@@ -254,7 +288,7 @@ void PulseShapeFitOOTPileupCorrection::setPulseShapeTemplate(const HcalPulseShap
    if( cntsetPulseShape ) return;
    ++ cntsetPulseShape;
    psfPtr_.reset(new FitterFuncs::PulseShapeFunctor(ps,pedestalConstraint_,timeConstraint_,addPulseJitter_,applyTimeSlew_,
-								 pulseJitter_,timeMean_,timeSig_,pedMean_,pedSig_,noise_));
+								 pulseJitter_,timeMean_,timeSig_,pedMean_,pedSig_,noise_,temptype_));
    spfunctor_    = new ROOT::Math::Functor(psfPtr_.get(),&FitterFuncs::PulseShapeFunctor::singlePulseShapeFunc, 3);
    dpfunctor_    = new ROOT::Math::Functor(psfPtr_.get(),&FitterFuncs::PulseShapeFunctor::doublePulseShapeFunc, 5);
    tpfunctor_    = new ROOT::Math::Functor(psfPtr_.get(),&FitterFuncs::PulseShapeFunctor::triplePulseShapeFunc, 7);
@@ -263,7 +297,7 @@ void PulseShapeFitOOTPileupCorrection::setPulseShapeTemplate(const HcalPulseShap
 void PulseShapeFitOOTPileupCorrection::resetPulseShapeTemplate(const HcalPulseShapes::Shape& ps) { 
    ++ cntsetPulseShape;
    psfPtr_.reset(new FitterFuncs::PulseShapeFunctor(ps,pedestalConstraint_,timeConstraint_,addPulseJitter_,applyTimeSlew_,
-								 pulseJitter_,timeMean_,timeSig_,pedMean_,pedSig_,noise_));
+								 pulseJitter_,timeMean_,timeSig_,pedMean_,pedSig_,noise_,temptype_));
    spfunctor_    = new ROOT::Math::Functor(psfPtr_.get(),&FitterFuncs::PulseShapeFunctor::singlePulseShapeFunc, 3);
    dpfunctor_    = new ROOT::Math::Functor(psfPtr_.get(),&FitterFuncs::PulseShapeFunctor::doublePulseShapeFunc, 5);
    tpfunctor_    = new ROOT::Math::Functor(psfPtr_.get(),&FitterFuncs::PulseShapeFunctor::triplePulseShapeFunc, 7);
@@ -279,6 +313,7 @@ void PulseShapeFitOOTPileupCorrection::apply(const std::vector<double> & inputCh
    double energyArr[HcalConst::maxSamples]={}, pedenArr[HcalConst::maxSamples]={};
    double tsTOT = 0, tstrig = 0; // in fC
    double tsTOTen = 0; // in GeV
+   bool FitCharge = 1; // miao's
    for(unsigned int ip=0; ip<HcalConst::maxSamples; ++ip){
       if( ip >= (unsigned) HcalConst::maxSamples ) continue; // Too many samples than what we wanna fit (10 is enough...) -> skip them
 //       const int capid = capidvec[ip];
@@ -305,7 +340,11 @@ void PulseShapeFitOOTPileupCorrection::apply(const std::vector<double> & inputCh
    std::vector<double> fitParsVec;
    status = -999;
    if( tstrig >= ts4Min_ && tsTOTen > 0. ) { //Two sigma from 0
+    if(FitCharge == 0){  //miao's
      status=pulseShapeFit(energyArr, pedenArr, chargeArr, pedArr, gainArr, tsTOTen, fitParsVec);
+    }else if(FitCharge == 1){  //begin miao's
+     status=pulseShapeFit(energyArr, pedenArr, chargeArr, pedArr, gainArr, tsTOT, fitParsVec);
+    }  //end miao's
    }
    if(tsTOTen <= 0.) {
      // this is lower than the PED, no need to do the fits
@@ -326,10 +365,13 @@ int PulseShapeFitOOTPileupCorrection::pulseShapeFit(const double * energyArr, co
    double tsMAX=0;
    int    nAboveThreshold = 0;
    double tmpx[HcalConst::maxSamples], tmpy[HcalConst::maxSamples], tmperry[HcalConst::maxSamples],tmperry2[HcalConst::maxSamples],tmpslew[HcalConst::maxSamples];
+   double tmpyCh[HcalConst::maxSamples]; //miao's change energy fitting to charge fitting
    double tstrig = 0; // in fC
+   bool FitCharge = 1;
    for(int i=0;i<HcalConst::maxSamples;++i){
       tmpx[i]=i;
       tmpy[i]=energyArr[i]-pedenArr[i];
+      tmpyCh[i]=chargeArr[i]-pedArr[i]; //miao's set charge
       //Add Time Slew !!! does this need to be pedestal subtracted
       tmpslew[i] = 0;
       if(applyTimeSlew_) tmpslew[i] = HcalTimeSlew::delay(std::max(1.0,chargeArr[i]),slewFlavor_); 
@@ -338,18 +380,28 @@ int PulseShapeFitOOTPileupCorrection::pulseShapeFit(const double * energyArr, co
       tmperry2[i]=noise_*noise_+ sigmaBin*sigmaBin; //Greg's Granularity
       //      tmperry2[i]=noise_*noise_;//+ sigmaBin*sigmaBin; //Greg's Granularity
       //Propagate it through
+      if (FitCharge == 0){ //miao's fit charge no converting
       tmperry2[i]*=(gainArr[i]*gainArr[i]); //Convert from fC to GeV
+      } //miao's
       tmperry [i]=sqrt(tmperry2[i]);
       //Add the Uncosntrained Double Pulse Switch
       if((chargeArr[i])>chargeThreshold_) nAboveThreshold++;
+      if (FitCharge == 0){ //miao's
       if(std::abs(energyArr[i])>tsMAX) tsMAX=std::abs(tmpy[i]);
+      }else if (FitCharge == 1){  //begin miao's
+      if(std::abs(chargeArr[i])>tsMAX) tsMAX=std::abs(tmpyCh[i]);
+      } //end miao's
       if( i ==4 || i ==5 ){
          tstrig += chargeArr[i] - pedArr[i];
       }
    }
    
    psfPtr_->setpsFitx    (tmpx);
+   if (FitCharge == 0){ //miao's
    psfPtr_->setpsFity    (tmpy);
+   }else if (FitCharge == 1){ //miao's
+   psfPtr_->setpsFity    (tmpyCh);
+   }
    psfPtr_->setpsFiterry (tmperry);
    psfPtr_->setpsFiterry2(tmperry2);
    psfPtr_->setpsFitslew (tmpslew);
@@ -365,7 +417,7 @@ int PulseShapeFitOOTPileupCorrection::pulseShapeFit(const double * energyArr, co
 
    //std::cout << std::endl;
    //std::cout << "---------" << std::endl;
-
+  if (FitCharge == 0){ //miao's
    if(ts4Chi2_ != 0) fit(1,timevalfit,chargevalfit,pedvalfit,chi2,fitStatus,tsMAX,tsTOTen,tmpy,BX);
 // Based on the pulse shape ( 2. likely gives the same performance )
    if(tmpy[2] > 3.*tmpy[3]) BX[2] = 2;
@@ -377,6 +429,17 @@ int PulseShapeFitOOTPileupCorrection::pulseShapeFit(const double * energyArr, co
    if(unConstrainedFit_ && nAboveThreshold > 5) { //For the old method 2 do double pulse fit if values above a threshold
      fit(2,timevalfit,chargevalfit,pedvalfit,chi2,fitStatus,tsMAX,tsTOTen,tmpy,BX); 
    }
+  }else if (FitCharge == 1){  //begin miao's
+   if(ts4Chi2_ != 0) fit(1,timevalfit,chargevalfit,pedvalfit,chi2,fitStatus,tsMAX,tsTOTen,tmpyCh,BX);
+   if(tmpy[2] > 3.*tmpy[3]) BX[2] = 2;
+   if(chi2 > ts4Chi2_ && !unConstrainedFit_ && tstrig < ts4Max_)   { //fails chi2 cut goes straight to 3 Pulse fit
+     fit(3,timevalfit,chargevalfit,pedvalfit,chi2,fitStatus,tsMAX,tsTOTen,tmpyCh,BX);
+   }
+   if(unConstrainedFit_ && nAboveThreshold > 5) { //For the old method 2 do double pulse fit if values above a threshold
+     fit(2,timevalfit,chargevalfit,pedvalfit,chi2,fitStatus,tsMAX,tsTOTen,tmpyCh,BX);
+   }
+  } //end miao's
+
    /*
    if(chi2 > ts345Chi2_)   { //fails do two pulse chi2 for TS5 
      BX[1] = 5;

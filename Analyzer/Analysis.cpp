@@ -2,6 +2,9 @@
 
 #include "Analysis.h"
 #include "readparameters/readparameters.h"
+#include "TProfile.h"
+#include "TProfile2D.h"
+
 
 #include <iostream>
 #include <sstream>
@@ -219,6 +222,8 @@ void Analysis::DoHlt() {
   // these are useful to suppress the verbosity of the minimizer
   //  extern int gErrorIgnoreLevel;
   //  gErrorIgnoreLevel = 1001;
+  extern int gErrorIgnoreLevel; //miao's
+  gErrorIgnoreLevel = 1001;  //miao's
 
   //=========================================================================      
   // These are the values we should set for Method 2 config with the python files
@@ -226,6 +231,7 @@ void Analysis::DoHlt() {
   // change these values for our tests
   
   // --------------------------------------------------------------------
+/*
   bool iPedestalConstraint = true;
   bool iTimeConstraint = true; // updated
   bool iAddPulseJitter = false;
@@ -246,16 +252,53 @@ void Analysis::DoHlt() {
   double its345Chi2 = 100.; // updated , not used
   double iChargeThreshold = 6.;
   int iFitTimes = 1;
-    
+*/
+
+//begin miao's settings
+  bool iPedestalConstraint = true;
+  bool iTimeConstraint = true; // for M2
+  bool iTimeConstraintLAG = false; // for LAG
+  bool iAddPulseJitter = false;
+  bool iUnConstrainedFit = false;
+  bool iApplyTimeSlew = true;  // for M2
+  bool iApplyTimeSlewLAG = false;  // for LAG
+  double iTS4Min = 0.; // updated
+  double iTS4Max = 100.; // updated 
+  double iPulseJitter = 1.;
+  double iTimeMean = 0;
+  double iTimeSig = 5.;  //for M2
+  double iTimeSigLAG = -1.0; //for LAG
+  double iPedMean = 0.;
+  double iPedSig = 0.5;
+  double iNoise = 1.;
+  double iTMin = -12.5; // updated
+  double iTMax = 12.5; // updated
+  double its3Chi2 = 5.; // updated , not used
+  double its4Chi2 = 15.; // updated 
+  double its345Chi2 = 100.; // updated , not used
+  double iChargeThreshold = 6.;
+  int iFitTimes = 1;
+  int iTemptypeM2 = 0;
+  int iTemptypeLAG = 1; 
+//end miao's setting
+   
   //========================================================================
   // Set the Method 2 Parameters here
   psFitOOTpuCorr_->setPUParams(iPedestalConstraint,iTimeConstraint,iAddPulseJitter,iUnConstrainedFit,
 			       iApplyTimeSlew,iTS4Min, iTS4Max, iPulseJitter,iTimeMean,iTimeSig,
 			       iPedMean,iPedSig,iNoise,iTMin,iTMax,its3Chi2,its4Chi2,its345Chi2,
-			       iChargeThreshold,HcalTimeSlew::Medium, iFitTimes);
+			       iChargeThreshold,HcalTimeSlew::Medium, iFitTimes, iTemptypeM2);
   
   // Now set the Pulse shape type
   psFitOOTpuCorr_->setPulseShapeTemplate(theHcalPulseShapes_.getShape(105));
+
+//begin miao's LAG para settings
+  psFitOOTpuCorrLAG_->setPUParams(iPedestalConstraint,iTimeConstraintLAG,iAddPulseJitter,iUnConstrainedFit,
+                               iApplyTimeSlewLAG,iTS4Min, iTS4Max, iPulseJitter,iTimeMean,iTimeSigLAG,
+                               iPedMean,iPedSig,iNoise,iTMin,iTMax,its3Chi2,its4Chi2,its345Chi2,
+                               iChargeThreshold,HcalTimeSlew::Medium, iFitTimes, iTemptypeLAG);
+//end miao's LAG para settings
+
 
   Int_t iphi, ieta, depth;
   Int_t TS[10] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
@@ -264,6 +307,9 @@ void Analysis::DoHlt() {
 
   Double_t m2Charge, m2Time, m2Ped, m2Chi, m2Status;
   Double_t m2Pulse[10];
+
+  Double_t LAGCharge, LAGTime, LAGPed, LAGChi, LAGStatus;   //miao's
+  Double_t LAGPulse[10];                                    //miao's
 
   Double_t wTime;
 
@@ -281,7 +327,23 @@ void Analysis::DoHlt() {
   tout->Branch("m2Status", &m2Status, "m2Status/D");
   tout->Branch("m2Pulse",  &m2Pulse,  "m2Pulse[10]/D");
 
+//begin miao's
+  tout->Branch("LAGCharge", &LAGCharge, "LAGCharge/D");
+  tout->Branch("LAGTime",   &LAGTime,   "LAGTime/D");
+  tout->Branch("LAGPed",    &LAGPed,    "LAGPed/D");
+  tout->Branch("LAGChi",    &LAGChi,    "LAGChi/D");
+  tout->Branch("LAGStatus", &LAGStatus, "LAGStatus/D");
+  tout->Branch("LAGPulse",  &LAGPulse,  "LAGPulse[10]/D");
+//end miao's
+
+
+
   tout->Branch("wTime", &wTime, "wTime/D");
+
+  TProfile* chi2_M2  = new TProfile("Chi2_M2","Chi2_M2",58,15.,605.); //miao's
+  TProfile* chi2_LAG = new TProfile("Chi2_LAG","Chi2_LAG",58,15.,605.); //miao's
+  TProfile* LAG_M2   = new TProfile("LAG_M2","LAG_M2",100,-0.5,100.5); //miao's
+  TProfile2D *LAG_M2_Ch  = new TProfile2D("LAG_M2_Ch","LAG_M2_Ch",100,-0.5,100.5,100,-0.5,100.5,"s"); //miao's
 
   //Loop over all events
   for (int jentry=0; jentry<Entries;jentry++) {
@@ -289,19 +351,22 @@ void Analysis::DoHlt() {
     fChain->GetEntry(jentry);
     if(jentry%1000==0) cout <<"Analyzed entry "<< jentry <<"/"<< Entries << endl;
     cout <<"Analyzed entry "<< jentry <<"/"<< Entries << endl;
+    if(jentry>1000) return;
 
     for (int j = 0; j < (int)PulseCount; j++) {
 
       if (IEta[j]>14 && Region==Barrel) continue;
       if (IEta[j]<19 && Region==Endcap) continue;
-      if (IEta[j]>27 && Region==Endcap) continue; // remove the bad tower 29
+      if (IEta[j]>27 && Region==Endcap) continue; // remove the bad tower 29 
 
       //      if (IEta[j]>14 && Region==Barrel) continue;
       //      if (IEta[j]<19 && Region==Endcap) continue;
 
       std::vector<double> inputCaloSample, inputPedestal, inputGain;                                                           
       std::vector<double> offlineAns, slowAns;
+      std::vector<double> LAGAns;
       int status;
+      int status1;  
 
       ieta=IEta[j]; iphi=IPhi[j]; depth=Depth[j];
 
@@ -328,11 +393,40 @@ void Analysis::DoHlt() {
 
       psFitOOTpuCorr_->apply(inputCaloSample,inputPedestal,inputGain,offlineAns, status);
 
+//begin miao's LAG fit
+      double totalQ = 0.0;
+      double tinyped = 0.0;
+      for (int oo=0; oo<3; oo++) { tinyped+=Pulse[oo];}
+      for (int oo=0; oo<10; oo++) { totalQ+=Pulse[oo];}
+
+      tinyped/=3;
+      totalQ-=10*tinyped;
+
+      if (totalQ<20.0 || totalQ>600.0) continue;
+      int ibin= floor( (totalQ-20.0)/10.0 );
+
+      int shapenum;
+      if ( abs(ieta)<17 ) {shapenum = 701 + ibin;}
+      else {shapenum = 801 + ibin;}
+      psFitOOTpuCorrLAG_->setPulseShapeTemplate(theHcalPulseShapes_.getShape(shapenum));
+
+      psFitOOTpuCorrLAG_->apply(inputCaloSample,inputPedestal,inputGain,LAGAns, status1);
+
+
       m2Charge=offlineAns[0];
       m2Time=offlineAns[1];
       m2Ped=offlineAns[2];
       m2Chi=offlineAns[3];
       m2Status=status;
+
+//begin miao's
+      LAGCharge=LAGAns[0];
+      LAGTime=LAGAns[1];
+      LAGPed=LAGAns[2];
+      LAGChi=LAGAns[3];
+      LAGStatus=status1;
+//end miao's
+
 
       for (uint i=0; i<offlineAns.size(); i++) {
       	if (i>3 && uint(i-4) < 10) {
@@ -340,7 +434,29 @@ void Analysis::DoHlt() {
       	}
       }
 
+//begin miao's
+      double totalEnergy=0.;
+      for (uint i=0; i<LAGAns.size(); i++) {
+        if (i>3 && uint(i-4) < 10) {
+          LAGPulse[uint(i-4)] = LAGAns[i];
+          totalEnergy+=LAGPulse[uint(i-4)];
+        }
+      }
+//end miao's
+
       tout->Fill();
+
+//miao's
+      if(totalEnergy>20.0){
+          chi2_M2->Fill(ibin*10.+20.,m2Chi);
+          if(LAGChi < 1000) chi2_LAG->Fill(ibin*10.+20.,LAGChi);
+      }
+      if(totalEnergy>20.0 && m2Chi<=100 && LAGChi<=100){
+          LAG_M2->Fill(m2Chi,LAGChi);
+          LAG_M2_Ch->Fill(m2Chi,LAGChi,ibin*10.+20.);
+      }
+
+
     }
   }
 

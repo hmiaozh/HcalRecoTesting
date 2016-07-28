@@ -22,6 +22,8 @@ namespace HcalConst{
    constexpr int maxSamples = 10;
    constexpr int maxPSshapeBin = 256;
    constexpr int nsPerBX = 25;
+   constexpr int maxLAGshapeBin = 10;  //miao's
+   constexpr int nsPerBXLAG = 1;   //miao's
    constexpr float iniTimeShift = 92.5f;
    constexpr double invertnsPerBx = 0.04;
 
@@ -33,7 +35,7 @@ namespace FitterFuncs{
       public:
      PulseShapeFunctor(const HcalPulseShapes::Shape& pulse,bool iPedestalConstraint, bool iTimeConstraint,bool iAddPulseJitter,bool iAddTimeSlew,
 		       double iPulseJitter,double iTimeMean,double iTimeSig,double iPedMean,double iPedSig,
-		       double iNoise);
+		       double iNoise, int iTemptype);
      ~PulseShapeFunctor();
      
      double EvalPulse(const std::vector<double>& pars);
@@ -53,12 +55,15 @@ namespace FitterFuncs{
      
    private:
      std::array<float,HcalConst::maxPSshapeBin> pulse_hist;
+     std::array<float,HcalConst::maxLAGshapeBin> pulse_hist_LAG; //miao's
      
      int cntNANinfit;
+     std::vector<float> acc1nsVec; //miao's
      std::vector<float> acc25nsVec, diff25nsItvlVec;
      std::vector<float> accVarLenIdxZEROVec, diffVarItvlIdxZEROVec;
      std::vector<float> accVarLenIdxMinusOneVec, diffVarItvlIdxMinusOneVec;
      void funcHPDShape(std::array<double,HcalConst::maxSamples> & ntmpbin, const double &pulseTime, const double &pulseHeight,const double &slew);
+     void funcLAGShape(std::array<double,HcalConst::maxSamples> & tenbin, const double &pTime, const double &pHeight); //miao's
      double psFit_x[HcalConst::maxSamples], psFit_y[HcalConst::maxSamples], psFit_erry[HcalConst::maxSamples], psFit_erry2[HcalConst::maxSamples], psFit_slew[HcalConst::maxSamples];
      
      bool pedestalConstraint_;
@@ -72,6 +77,7 @@ namespace FitterFuncs{
      double pedSig_;
      double noise_;
      double timeShift_;
+     int temptype_;
 
      double inverttimeSig_, inverttimeSig2_;
      double invertpedSig_, invertpedSig2_;
@@ -91,7 +97,7 @@ public:
     void setPUParams(bool   iPedestalConstraint, bool iTimeConstraint,bool iAddPulseJitter,bool iUnConstrainedFit,bool iApplyTimeSlew,
 		     double iTS4Min, double iTS4Max, double iPulseJitter,double iTimeMean,double iTimeSig,double iPedMean,double iPedSig,
 		     double iNoise,double iTMin,double iTMax,
-		     double its3Chi2,double its4Chi2,double its345Chi2,double iChargeThreshold,HcalTimeSlew::BiasSetting slewFlavor, int iFitTimes);
+		     double its3Chi2,double its4Chi2,double its345Chi2,double iChargeThreshold,HcalTimeSlew::BiasSetting slewFlavor, int iFitTimes, int iTemptype);
     
     void setPulseShapeTemplate  (const HcalPulseShapes::Shape& ps);
     void resetPulseShapeTemplate(const HcalPulseShapes::Shape& ps);
@@ -129,7 +135,8 @@ private:
     double timeSig_;
     double pedMean_;
     double pedSig_;
-    double noise_;    
+    double noise_; 
+    int temptype_;   
     HcalTimeSlew::BiasSetting slewFlavor_;    
 };
 
